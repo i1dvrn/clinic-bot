@@ -1,0 +1,8 @@
+{
+  "name": "clinic-bot",
+  "version": "1.0.0",
+  "description": "بوت ذكاء اصطناعي لمسنجر عيادة",
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}
