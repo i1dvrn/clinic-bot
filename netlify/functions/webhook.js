@@ -48,40 +48,41 @@ exports.handler = async (event) => {
 
 async function getGeminiReply(userMessage) {
   try {
-    // استخدم إصدار v1beta لأنه يدعم نظام التعليمات (system_instruction) بشكل مستقر
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // تم نقل نظام التعليمات ليكون جزءاً من الطلب بشكل صحيح
-          system_instruction: { 
-            parts: [{ text: "أنت مساعد ذكي لعيادة مستشفى المرج التخصصي. رد باختصار ولطف باللغة العربية." }] 
-          },
           contents: [
             {
+              role: "user", // تحديد الدور مهم جداً هنا
               parts: [{ text: userMessage }]
             }
-          ]
+          ],
+          system_instruction: { 
+            role: "system",
+            parts: [{ text: "أنت مساعد ذكي لعيادة مستشفى المرج التخصصي. رد باختصار ولطف باللغة العربية." }] 
+          }
         }),
       }
     );
 
     const data = await response.json();
 
-    if (data.candidates && data.candidates[0]) {
+    // فحص دقيق للرد
+    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
       return data.candidates[0].content.parts[0].text;
     } else {
-      console.error("خطأ في رد جوجل:", data);
+      // طباعة الخطأ في السجلات لنعرف السبب لو فشل
+      console.error("Google API Response Error:", JSON.stringify(data));
       return "أهلاً بك في مستشفى المرج، كيف يمكنني مساعدتك؟";
     }
   } catch (error) {
-    console.error("فشل الاتصال بـ Gemini:", error);
+    console.error("Network/Fetch Error:", error);
     return "شكراً لتواصلك معنا، سنرد عليك في أقرب وقت.";
   }
 }
-
 async function sendMessage(recipientId, text) {
   try {
     console.log(`[جاري إرسال الرد إلى المسنجر لـ ${recipientId}...]`);
