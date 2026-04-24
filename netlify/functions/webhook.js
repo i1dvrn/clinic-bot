@@ -5,25 +5,20 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// ===== التحقق من Webhook =====
 exports.handler = async (event) => {
+  // 1. التحقق من Webhook
   if (event.httpMethod === "GET") {
     const params = event.queryStringParameters;
-    if (
-      params["hub.mode"] === "subscribe" &&
-      params["hub.verify_token"] === VERIFY_TOKEN
-    ) {
-      console.log("Webhook verified successfully");
+    if (params["hub.mode"] === "subscribe" && params["hub.verify_token"] === VERIFY_TOKEN) {
       return { statusCode: 200, body: params["hub.challenge"] };
     }
     return { statusCode: 403, body: "Forbidden" };
   }
 
-  // ===== استقبال الرسائل =====
+  // 2. استقبال ومعالجة الرسائل
   if (event.httpMethod === "POST") {
     try {
       const body = JSON.parse(event.body);
-
       if (body.object === "page") {
         for (const entry of body.entry) {
           for (const msg of entry.messaging) {
@@ -31,9 +26,13 @@ exports.handler = async (event) => {
               const senderId = msg.sender.id;
               const userMessage = msg.message.text;
 
-              console.log(`Message from ${senderId}: ${userMessage}`);
+              console.log(`[1] استلمت رسالة من ${senderId}: ${userMessage}`);
 
+              // طلب الرد من Gemini
               const reply = await getGeminiReply(userMessage);
+              console.log(`[2] رد Gemini الجاهز: ${reply}`);
+
+              // إرسال الرد لمسنجر
               await sendMessage(senderId, reply);
             }
           }
@@ -41,66 +40,44 @@ exports.handler = async (event) => {
       }
       return { statusCode: 200, body: "OK" };
     } catch (error) {
-      console.error("Error:", error);
-      return { statusCode: 200, body: "OK" };
+      console.error("[خطأ في المعالجة]:", error);
+      return { statusCode: 500, body: "Internal Server Error" };
     }
   }
-
-  return { statusCode: 405, body: "Method Not Allowed" };
 };
 
-// ===== Gemini AI =====
 async function getGeminiReply(userMessage) {
   try {
+    console.log("[جاري الاتصال بـ Gemini...]");
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text: `أنت مساعد ذكي لعيادة طبية متخصصة. مهمتك:
-- الرد على استفسارات المرضى بلطف واحترافية باللغة العربية دائماً
-- تقديم معلومات عن مواعيد العيادة وخدماتها
-- مساعدة المرضى في الاستفسار عن الحجز
-- الإجابة على الأسئلة الشائعة عن العيادة
-- لا تقدم تشخيصاً طبياً أبداً — دائماً انصح بزيارة الطبيب
-- إذا كان السؤال خارج نطاق العيادة، اعتذر بلطف وأعد توجيه المحادثة
-- الردود تكون مختصرة وواضحة (3-5 جمل كحد أقصى)`,
-              },
-            ],
-          },
-          contents: [
-            {
-              parts: [{ text: userMessage }],
-            },
-          ],
-          generationConfig: {
-            maxOutputTokens: 300,
-            temperature: 0.7,
-          },
+          contents: [{ parts: [{ text: userMessage }] }],
+          system_instruction: { 
+            parts: [{ text: "أنت مساعد ذكي لعيادة مستشفى المرج التخصصي. رد باختصار ولطف باللغة العربية." }] 
+          }
         }),
       }
     );
 
     const data = await response.json();
-
     if (data.candidates && data.candidates[0]) {
       return data.candidates[0].content.parts[0].text;
     }
-
-    return "عذراً، حدث خطأ في معالجة رسالتك. يرجى المحاولة مرة أخرى أو التواصل معنا مباشرة.";
+    console.error("[خطأ في هيكلة رد Gemini]:", data);
+    return "عذراً، لم أستطع فهم ذلك.";
   } catch (error) {
-    console.error("Gemini error:", error);
-    return "عذراً، حدث خطأ مؤقت. يرجى المحاولة لاحقاً.";
+    console.error("[Gemini API Error]:", error);
+    return "حدث خطأ في الاتصال بالذكاء الاصطناعي.";
   }
 }
 
-// ===== إرسال الرد لمسنجر =====
 async function sendMessage(recipientId, text) {
   try {
+    console.log(`[جاري إرسال الرد إلى المسنجر لـ ${recipientId}...]`);
     const response = await fetch(
       `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       {
@@ -108,16 +85,17 @@ async function sendMessage(recipientId, text) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipient: { id: recipientId },
-          message: { text },
+          message: { text: text },
         }),
       }
     );
-
     const data = await response.json();
     if (data.error) {
-      console.error("Messenger send error:", data.error);
+      console.error("[Facebook Send Error]:", data.error);
+    } else {
+      console.log("[تم إرسال الرسالة بنجاح للمسنجر! ✅]");
     }
   } catch (error) {
-    console.error("Send message error:", error);
+    console.error("[Network Error while sending to FB]:", error);
   }
 }
