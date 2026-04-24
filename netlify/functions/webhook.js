@@ -48,30 +48,38 @@ exports.handler = async (event) => {
 
 async function getGeminiReply(userMessage) {
   try {
-    console.log("[جاري الاتصال بـ Gemini...]");
+    // استخدم الرابط الذي جلبته من قوقل ستوديو لأنه الأكثر استقراراً
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: userMessage }] }],
+          contents: [
+            {
+              parts: [{ text: userMessage }]
+            }
+          ],
+          // يمكنك إضافة تعليمات النظام هنا أيضاً
           system_instruction: { 
-            parts: [{ text: "أنت مساعد ذكي لعيادة مستشفى المرج التخصصي. رد باختصار ولطف باللغة العربية." }] 
+            parts: [{ text: "أنت مساعد ذكي لعيادة مستشفى المرج التخصصي. رد بلطف وباللغة العربية." }] 
           }
         }),
       }
     );
 
     const data = await response.json();
+    
+    // فحص إذا كان هناك رد فعلي
     if (data.candidates && data.candidates[0]) {
       return data.candidates[0].content.parts[0].text;
+    } else {
+      console.error("خطأ من جوجل:", data);
+      return "عذراً، لم أفهم ذلك.";
     }
-    console.error("[خطأ في هيكلة رد Gemini]:", data);
-    return "عذراً، لم أستطع فهم ذلك.";
   } catch (error) {
-    console.error("[Gemini API Error]:", error);
-    return "حدث خطأ في الاتصال بالذكاء الاصطناعي.";
+    console.error("مشكلة في الاتصال:", error);
+    return "حدث خطأ فني.";
   }
 }
 
